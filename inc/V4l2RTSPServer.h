@@ -83,18 +83,6 @@ class V4l2RTSPServer {
 					int queueSize, V4L2DeviceSource::CaptureMode captureMode, int repeatConfig,
 					const std::string& outputFile, V4l2IoType ioTypeOut, V4l2Output*& out);
 
-#ifdef HAVE_ALSA
-        StreamReplicator* CreateAudioReplicator(
-			const std::string& audioDev, const std::list<snd_pcm_format_t>& audioFmtList, int audioFreq, int audioNbChannels, int verbose,
-			int queueSize, V4L2DeviceSource::CaptureMode captureMode);
-        
-        static std::string       getV4l2Alsa(const std::string& v4l2device);
-        static snd_pcm_format_t  decodeAudioFormat(const std::string& fmt);
-        static std::string       getAudioFormatName(const snd_pcm_format_t fmt) {
-            return snd_pcm_format_name(fmt);
-        }
-#endif
-
         // -----------------------------------------
         //    Add unicast Session
         // -----------------------------------------

@@ -26,27 +26,14 @@ AnykaEncoderBase::AnykaEncoderBase()
 }
 
 
-bool AnykaEncoderBase::start(void *videoDevice, void *audioDevice, const VideoEncodeParam &videoParams, const audio_param &audioParams)
+bool AnykaEncoderBase::start(void *videoDevice, const VideoEncodeParam &videoParams)
 {
-    if (isAudioEncoder())
-    {
-        onStart(audioDevice, audioParams);
-    }
-    else
-    {
-        onStart(videoDevice, videoParams); 
-    }
-
+    onStart(videoDevice, videoParams); 
     return isSet();
 }
 
 
 void AnykaEncoderBase::onStart(void *device, const VideoEncodeParam &videoParams)
-{
-}
-
-
-void AnykaEncoderBase::onStart(void *device, const audio_param &audioParams)
 {
 }
 

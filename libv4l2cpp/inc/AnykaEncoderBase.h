@@ -42,7 +42,7 @@ public:
 
     bool isSet() const;
 
-    bool start(void *videoDevice, void *audioDevice, const VideoEncodeParam &videoParams, const audio_param &audioParams);
+    bool start(void *videoDevice, const VideoEncodeParam &videoParams);
     void stop();
     bool encode();
 
@@ -52,7 +52,6 @@ public:
 protected:
     virtual bool isAudioEncoder() const = 0;
     virtual void onStart(void *device, const VideoEncodeParam &videoParams);
-    virtual void onStart(void *device, const audio_param &audioParams);
     virtual void onStop() = 0;
     virtual bool readNewFrameData(FrameRef *outFrame) = 0;
 

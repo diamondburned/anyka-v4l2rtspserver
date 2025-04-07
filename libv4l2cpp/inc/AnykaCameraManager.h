@@ -44,8 +44,6 @@ enum StreamId
 {
 	VideoHigh = 0,
 	VideoLow,
-	AudioHigh,
-	AudioLow,
 	STREAMS_COUNT
 };
 
@@ -88,11 +86,6 @@ private:
 	bool startVideoCapture();
 	bool stopVideoCapture();
 
-	bool initAudioDevice();
-	bool setAudioParams();
-	bool startAudioCapture();
-	bool stopAudioCapture();
-
 	bool start();
 	void stop();
 
@@ -100,7 +93,6 @@ private:
 	bool restartThread();
 	
 	VideoEncodeParam getVideoEncodeParams(size_t streamId);
-	audio_param getAudioEncodeParams(size_t streamId);
 	VideoEncodeParam getJpegEncodeParams();
 
 	void processThread();
@@ -121,7 +113,6 @@ private:
 
 private:
 	void *m_videoDevice;
-	void *m_audioDevice;
 	ak_pthread_t m_threadId;
 	std::atomic_bool m_threadStopFlag;
 	AnykaStream m_streams[STREAMS_COUNT];

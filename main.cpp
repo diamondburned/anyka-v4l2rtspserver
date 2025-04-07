@@ -100,12 +100,6 @@ int main(int argc, char** argv)
 	const char* realm = NULL;
 	std::list<std::string> userPasswordList;
 	std::string webroot;
-#ifdef HAVE_ALSA	
-	int audioFreq = 44100;
-	int audioNbChannels = 2;
-	std::list<snd_pcm_format_t> audioFmtList;
-	snd_pcm_format_t audioFmt = SND_PCM_FORMAT_UNKNOWN;
-#endif	
 	const char* defaultPort = getenv("PORT");
 	if (defaultPort != NULL) {
 		rtspPort = atoi(defaultPort);
@@ -148,13 +142,6 @@ int main(int argc, char** argv)
 			case 'W':	width     = atoi(optarg); break;
 			case 'H':	height    = atoi(optarg); break;
 			case 'G':   sscanf(optarg,"%dx%dx%d", &width, &height, &fps); break;
-			
-			// ALSA
-#ifdef HAVE_ALSA	
-			case 'A':	audioFreq = atoi(optarg); break;
-			case 'C':	audioNbChannels = atoi(optarg); break;
-			case 'a':	audioFmt = V4l2RTSPServer::decodeAudioFormat(optarg); if (audioFmt != SND_PCM_FORMAT_UNKNOWN) {audioFmtList.push_back(audioFmt);} ; break;
-#endif			
 			
 			// version
 			case 'V':	
@@ -201,13 +188,6 @@ int main(int argc, char** argv)
 				std::cout << "\t -F <fps>         : V4L2 capture framerate (default "<< fps << ")"                                                    << std::endl;
 				std::cout << "\t -G <w>x<h>[x<f>] : V4L2 capture format (default "<< width << "x" << height << "x" << fps << ")"  << std::endl;
 				
-#ifdef HAVE_ALSA	
-				std::cout << "\t ALSA options"                                                                                               << std::endl;
-				std::cout << "\t -A freq          : ALSA capture frequency and channel (default " << audioFreq << ")"                                << std::endl;
-				std::cout << "\t -C channels      : ALSA capture channels (default " << audioNbChannels << ")"                                       << std::endl;
-				std::cout << "\t -a fmt           : ALSA capture audio format (default S16_BE)"                                                      << std::endl;
-#endif
-				
 				std::cout << "\t Devices :"                                                                                                    << std::endl;
 				std::cout << "\t [V4L2 device][,ALSA device] : V4L2 capture device or/and ALSA capture device (default "<< dev_name << ")"     << std::endl;
 				exit(0);
@@ -233,14 +213,6 @@ int main(int argc, char** argv)
 		videoformatList.push_back(V4L2_PIX_FMT_JPEG);
 		videoformatList.push_back(V4L2_PIX_FMT_NV12);
 	}
-
-#ifdef HAVE_ALSA	
-	// default audio format tries
-	if (audioFmtList.empty()) {
-		audioFmtList.push_back(SND_PCM_FORMAT_S16_LE);
-		audioFmtList.push_back(SND_PCM_FORMAT_S16_BE);
-	}
-#endif	
 	
 	// init logger
 	initLogger(verbose);
@@ -294,12 +266,6 @@ int main(int argc, char** argv)
 					
 			// Init Audio Capture
 			StreamReplicator* audioReplicator = NULL;
-#ifdef HAVE_ALSA
-			audioReplicator = rtspServer.CreateAudioReplicator(
-					audioDev, audioFmtList, audioFreq, audioNbChannels, verbose,
-					queueSize, captureMode);		
-#endif
-					
 										
 			// Create Multicast Session
 			if (multicast)						

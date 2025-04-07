@@ -12,7 +12,6 @@
 #include <alsa/asoundlib.h>
 #include "logger.h"
 #include <linux/videodev2.h>
-#include "AnykaAudioEncoder.h"
 #include "FileFinder.h"
 #include <algorithm>
 #include <map>
@@ -20,8 +19,6 @@
 extern "C"
 {
 	#include "ak_vi.h"
-	#include "ak_ai.h"
-	#include "ak_ao.h"
 	#include "ak_common.h"
 }
 
@@ -29,10 +26,6 @@ const size_t AnykaCameraManager::kInvalidStreamId = (size_t)-1;
 const std::string kConfigSensor      	 = "sensor";
 const std::string kConfigWidth       	 = "width";
 const std::string kConfigHeight      	 = "height";
-const std::string kConfigSampleRate  	 = "samplerate";
-const std::string kConfigSampleInterval  = "sampleinterval";
-const std::string kConfigChannels    	 = "channels";
-const std::string kConfigVolume      	 = "volume";
 const std::string kConfigCodec	     	 = "codec";
 const std::string kConfigMinQp	     	 = "minqp";
 const std::string kConfigMaxQp	     	 = "maxqp";
@@ -86,10 +79,6 @@ const std::map<int, int> kAkCodecToFormatMap
 {
 	{H264_ENC_TYPE, 			V4L2_PIX_FMT_H264},
 	{HEVC_ENC_TYPE, 			V4L2_PIX_FMT_HEVC},
-	{AK_AUDIO_TYPE_AAC, 		SND_PCM_FORMAT_AAC},
-	{AK_AUDIO_TYPE_PCM, 		SND_PCM_FORMAT_S16_LE},
-	{AK_AUDIO_TYPE_PCM_ALAW, 	SND_PCM_FORMAT_A_LAW},
-	{AK_AUDIO_TYPE_PCM_ULAW, 	SND_PCM_FORMAT_MU_LAW}
 };
 
 
@@ -99,10 +88,6 @@ const std::map<std::string, std::string> kDefaultMainConfig
 	{kConfigFps	   	  	    , "25"},
 	{kConfigJpgFps          , "1"},
 	{kConfigJpgStreamId     , "1"},
-	{kConfigVolume    	    , "10"},
-	{kConfigChannels  	    , "1"},
-	{kConfigSampleRate	    , "8000"},
-	{kConfigSampleInterval  , std::to_string(AUDIO_DEFAULT_INTERVAL)},
 	{kConfigOsdFontPath     , "/usr/local/ak_font_16.bin"},
 	{kConfigOsdOrigFontSize , "16"},
 	{kConfigOsdFrontColor   , "1"},
@@ -182,20 +167,6 @@ const std::map<std::string, std::string> kDefaultConfig[STREAMS_COUNT]
 		{kConfigOsdX   	    , "10"},
 		{kConfigOsdY   	    , "12"},
 	},
-
-	// AudioHigh
-	{
-		{kConfigSampleRate, "8000"},
-		{kConfigChannels  , "1"},
-		{kConfigCodec	  , std::to_string(AK_AUDIO_TYPE_AAC)}, // 4
-	},
-
-	// AudioLow
-	{
-		{kConfigSampleRate, "8000"},
-		{kConfigChannels  , "1"},
-		{kConfigCodec	  , std::to_string(AK_AUDIO_TYPE_PCM_ALAW)}, // 17
-	},
 };
 
 
@@ -203,15 +174,12 @@ std::map<std::string, StreamId> kStreamNames
 {
 	{"video0", VideoHigh},
 	{"video1", VideoLow},
-	{"audio0", AudioHigh},
-	{"audio1", AudioLow},
 };
 
 
 const char* kDefaultConfigName = "anykacam.ini";
 const FrameRef kEmptyFrameRef;
 const size_t kMaxVideoBufferSize = 512 * 1024;
-const size_t kMaxAudioBufferSize = 8 * 1024;
 const int kFlipImageFlag   = 1;
 const int kMirrorImageFlag = 2;
 
@@ -239,24 +207,6 @@ static void updateDefaultConfig(const std::shared_ptr<ConfigFile> &config)
 	updateDefaultConfigSection(config,  kDefaultMainConfig, std::string());
 }
 
-
-static void clearAudioOutput()
-{
-	struct pcm_param param = {0};
-	param.sample_bits = 16;
-	param.channel_num = AUDIO_CHANNEL_MONO;
-	param.sample_rate = 8000;
-
-	void *handle = ak_ao_open(&param);
-	if (handle != NULL) 
-	{
-		ak_ao_enable_speaker(handle, AUDIO_FUNC_ENABLE);
-		ak_ao_set_resample(handle, AUDIO_FUNC_DISABLE);
-		ak_ao_set_volume(handle, 6);
-		ak_ao_clear_frame_buffer(handle);
-		ak_ao_close(handle);
-	}
-}
 
 
 AnykaCameraManager::AnykaStream::AnykaStream()
@@ -300,10 +250,7 @@ AnykaCameraManager::AnykaCameraManager()
 		{
 			m_streams[i].encoder = new AnykaVideoEncoder();
 		}
-		else
-		{
-			m_streams[i].encoder = new AnykaAudioEncoder();
-		}
+
 
 		m_config[i].init(config, i);
 	}
@@ -315,9 +262,7 @@ AnykaCameraManager::AnykaCameraManager()
 	m_maxMotionCounter           = m_mainConfig.getValue(kConfigMotionUpdateCnt, m_maxMotionCounter);
 	m_preferSharedConfig         = m_mainConfig.getValue(kConfigPreferShared, 0) != 0;
 
-	clearAudioOutput();
 	initVideoDevice();
-	initAudioDevice();
 }
 
 
@@ -330,7 +275,6 @@ AnykaCameraManager::~AnykaCameraManager()
 		delete m_streams[i].encoder;
 	}
 
-	ak_ai_close(m_audioDevice);
 	ak_vi_close(m_videoDevice);
 
 	LOG(DEBUG)<<"AnykaCameraManager destruct"<<std::flush;
@@ -439,28 +383,10 @@ unsigned int AnykaCameraManager::getHeight(size_t streamId)
 }
 
 
-int AnykaCameraManager::getSampleRate(size_t streamId)
-{
-	return streamId < STREAMS_COUNT
-		? m_config[streamId].getValue<unsigned int>(kConfigSampleRate, 0)
-		: 0;
-}
-
-
-int AnykaCameraManager::getChannels(size_t streamId)
-{
-	return streamId < STREAMS_COUNT
-		? m_config[streamId].getValue<unsigned int>(kConfigChannels, 0)
-		: 0;
-}
-
-
 size_t AnykaCameraManager::getBufferSize(size_t streamId) const
 {
-	return streamId < AudioHigh
-		? kMaxVideoBufferSize
-		: streamId < STREAMS_COUNT
-			? kMaxAudioBufferSize
+	return streamId < STREAMS_COUNT
+			? kMaxVideoBufferSize
 			: 0;
 }
 
@@ -566,74 +492,6 @@ bool AnykaCameraManager::stopVideoCapture()
 }
 
 
-bool AnykaCameraManager::initAudioDevice()
-{
-	struct pcm_param ai_param = {0};
-	ai_param.sample_bits = 16; // Only 16 supported.
-	ai_param.channel_num = m_mainConfig.getValue(kConfigChannels,   0);
-	ai_param.sample_rate = m_mainConfig.getValue(kConfigSampleRate, 0);
-
-    m_audioDevice = ak_ai_open(&ai_param);
-    if (m_audioDevice != NULL)
-    {
-		LOG(NOTICE)<<"ak_ai_open success";
-		if (ak_ai_set_source(m_audioDevice, AI_SOURCE_MIC) == AK_SUCCESS)
-		{
-			LOG(NOTICE)<<"ak_ai_set_source success";
-		}
-		else
-		{
-			LOG(ERROR)<<"ak_ai_set_source failed";
-			ak_ai_close(m_audioDevice);
-			m_audioDevice = NULL;
-
-			abortIfNeed();
-		}
-	}
-	else
-	{
-		LOG(ERROR)<<"ak_ai_open failed";
-
-		abortIfNeed();
-	}
-
-	return m_audioDevice != NULL;
-}
-
-
-bool AnykaCameraManager::setAudioParams()
-{
-	ak_ai_set_aec(m_audioDevice, AUDIO_FUNC_ENABLE);
-	ak_ai_set_nr_agc(m_audioDevice, AUDIO_FUNC_ENABLE);
-	ak_ai_set_resample(m_audioDevice, AUDIO_FUNC_DISABLE);
-
-	const int volume = m_mainConfig.getValue(kConfigVolume, 10); //0 - 12, 0 - mute
-	ak_ai_set_volume(m_audioDevice, volume);
-	ak_ai_clear_frame_buffer(m_audioDevice);
-
-	const int interval = m_mainConfig.getValue(kConfigSampleInterval, AUDIO_DEFAULT_INTERVAL);
-
-	if (ak_ai_set_frame_interval(m_audioDevice, interval) != AK_SUCCESS)
-	{
-		LOG(WARN)<<"ak_ai_set_frame_interval failed";
-	}
-
-	return true;
-}
-
-
-bool AnykaCameraManager::startAudioCapture()
-{
-	return ak_ai_start_capture(m_audioDevice) == AK_SUCCESS;
-}
-
-
-bool AnykaCameraManager::stopAudioCapture()
-{
-	return ak_ai_stop_capture(m_audioDevice) == AK_SUCCESS;
-}
-
-
 bool AnykaCameraManager::start()
 {
 	bool retVal = true;
@@ -641,20 +499,20 @@ bool AnykaCameraManager::start()
 	if (std::any_of(std::begin(m_streams), std::end(m_streams), 
 			[](const AnykaStream &strm) { return strm.isActivated.load(); }))
 	{
-		if (setVideoParams() && startVideoCapture() && setAudioParams() && startAudioCapture())
+		if (setVideoParams() && startVideoCapture())
 		{
 			for (size_t i = 0; i < STREAMS_COUNT; ++i)
 			{
 				if (m_streams[i].isActivated)
 				{
-					retVal = m_streams[i].encoder->start(m_videoDevice, m_audioDevice, getVideoEncodeParams(i), getAudioEncodeParams(i)) || retVal;
+					retVal = m_streams[i].encoder->start(m_videoDevice, getVideoEncodeParams(i)) || retVal;
 				}
 			}
 		}
 
 		if (retVal)
 		{
-			if (!m_jpegEncoder.start(m_videoDevice, NULL, getJpegEncodeParams(), getAudioEncodeParams(0)))
+			if (!m_jpegEncoder.start(m_videoDevice, getJpegEncodeParams()))
 			{
 				LOG(ERROR)<<"can't init jpeg stream";
 			}
@@ -805,7 +663,6 @@ void AnykaCameraManager::stop()
 	m_motionDetect.stop();
 
 	stopVideoCapture();
-	stopAudioCapture();
 
 	if (m_motionDetectionFd != -1)
 	{
@@ -864,19 +721,6 @@ VideoEncodeParam AnykaCameraManager::getVideoEncodeParams(size_t streamId)
 	param.targetKbps = m_config[streamId].getValue(kConfigTargetKbps, 0);
 
 	return param;
-}
-
-
-audio_param AnykaCameraManager::getAudioEncodeParams(size_t streamId)
-{
-	audio_param retVal = {AK_AUDIO_TYPE_UNKNOWN, 0};
-
-	retVal.channel_num = m_config[streamId].getValue(kConfigChannels, 0);
-	retVal.sample_bits = 16;
-	retVal.sample_rate = m_config[streamId].getValue(kConfigSampleRate, 0);
-	retVal.type        = (ak_audio_type)m_config[streamId].getValue(kConfigCodec, 0);
-
-	return retVal;
 }
 
 
